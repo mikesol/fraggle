@@ -1,10 +1,10 @@
-export const FRAGGLE_NODE_TYPE = 999;
-export const FRAGGLE_NODE_NAME = "#fraggle";
+const FRAGGLE_NODE_TYPE = 999;
+const FRAGGLE_NODE_NAME = "#fraggle";
 
 class Fraggle {
 	$id = null;
 	$reified = null;
-	$parentNode = null;
+	$logicalParent = null;
 	$childNodes = null;
 	baseURI = null;
 	childNodes = null;
@@ -29,7 +29,7 @@ class Fraggle {
 		// operations like appending
 		this.$reified = null;
 		// this is either a fraggle, a real node, or null, whereas `parentNode` is always a real node or null
-		this.$parentNode = null;
+		this.$logicalParent = null;
 		// this is a list of real child nodes and fraggles interleaved. it is used to populate the childNodes list incrementally.
 		// note that nested fraggles may have the same child nodes.
 		// in the DOM, this would be illegal, but for fraggles,
@@ -64,7 +64,7 @@ const shiftRightByNStartingAt = (arr, n, start) => {
 };
 
 // methods
-export const insertBefore =
+const insertBefore =
 	(nodePredicate) => ($this, newNode, referenceNode) => {
 		// there are 12 cases to consider
 		// node node node
@@ -121,8 +121,9 @@ export const insertBefore =
 					for (let i = 0; i < newNode.childNodes.length; i++) {
 						$this.insertBefore(newNode.childNodes[i], referenceNode);
 					}
-					newNode.$parentNode = $this;
-					newNode.parentNode = $this;
+					newNode.$logicalParent = $this;
+					newNode.$reified = $this;
+					newNode.parentNode = $this.parentNode;
 					newNode.isConnected = true;
 					newNode.parentElement = $this;
 					newNode.nextSibling = referenceNode;
@@ -134,8 +135,9 @@ export const insertBefore =
 					for (let i = 0; i < newNode.childNodes.length; i++) {
 						$this.appendChild(newNode.childNodes[i]);
 					}
-					newNode.$parentNode = $this;
-					newNode.parentNode = $this;
+					newNode.$logicalParent = $this;
+					newNode.$reified = $this;
+					newNode.parentNode = $this.parentNode;
 					newNode.isConnected = true;
 					newNode.parentElement = $this;
 					newNode.nextSibling = null;
@@ -151,8 +153,9 @@ export const insertBefore =
 								: referenceNode.nextSibling
 						);
 					}
-					newNode.$parentNode = $this;
-					newNode.parentNode = $this;
+					newNode.$logicalParent = $this;
+					newNode.$reified = $this;
+					newNode.parentNode = $this.parentNode;
 					newNode.isConnected = true;
 					newNode.parentElement = $this;
 					let currentNode = referenceNode;
@@ -211,14 +214,14 @@ export const insertBefore =
 						$$this.$childNodes[i].n.previousSibling = node;
 					}
 				}
-				if (!stopped && $$this.$parentNode instanceof Fraggle) {
+				if (!stopped && $$this.$logicalParent instanceof Fraggle) {
 					let i = 0;
-					for (; i < $$this.$parentNode.$childNodes.length; i++) {
-						if ($$this.$parentNode.$childNodes[i].n === $$this) {
+					for (; i < $$this.$logicalParent.$childNodes.length; i++) {
+						if ($$this.$logicalParent.$childNodes[i].n === $$this) {
 							break;
 						}
 					}
-					doPreviousSiblingAssignment($$this.$parentNode, i + 1, node);
+					doPreviousSiblingAssignment($$this.$logicalParent, i + 1, node);
 				}
 			};
 			const doNextSiblingAssignment = ($$this, marker, node) => {
@@ -238,14 +241,14 @@ export const insertBefore =
 						$$this.$childNodes[i].n.nextSibling = node;
 					}
 				}
-				if (!stopped && $$this.$parentNode instanceof Fraggle) {
+				if (!stopped && $$this.$logicalParent instanceof Fraggle) {
 					let i = 0;
-					for (; i < $$this.$parentNode.$childNodes.length; i++) {
-						if ($$this.$parentNode.$childNodes[i].n === $$this) {
+					for (; i < $$this.$logicalParent.$childNodes.length; i++) {
+						if ($$this.$logicalParent.$childNodes[i].n === $$this) {
 							break;
 						}
 					}
-					doNextSiblingAssignment($$this.$parentNode, i - 1, node);
+					doNextSiblingAssignment($$this.$logicalParent, i - 1, node);
 				}
 			};
 			//
@@ -285,12 +288,12 @@ export const insertBefore =
 				if (nodePredicate(referenceNode)) {
 					// CASE 2
 					// the parent is a fraggle, but the reference and the new node are both DOM nodes
-					$this.$reified.insertBefore(newNode, referenceNode);
+					$this.$reified && $this.$reified.insertBefore(newNode, referenceNode);
 					doPreviousSiblingAssignment($this, insertedAt + 1, newNode);
 					doNextSiblingAssignment($this, insertedAt - 1, newNode);
 					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
 					shiftRightByNStartingAt($this.$childNodes, 1, insertedAt + 1);
-					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
+					$this.childNodes.splice($this.$childNodes[insertedAt].r - 1, 0, newNode);
 					if ($this.childNodes[0] === newNode) {
 						$this.firstChild = newNode;
 					}
@@ -300,7 +303,7 @@ export const insertBefore =
 				} else if (referenceNode === null) {
 					// CASE 11
 					// we are inserting a node at the end of a fraggle
-					$this.$reified.appendChild(newNode);
+					$this.$reified && $this.$reified.appendChild(newNode);
 					// note that doPreviousSiblingAssignment will immediately kick
 					// up a level as there is nothing to the left
 					doPreviousSiblingAssignment($this, insertedAt + 1, newNode);
@@ -320,7 +323,7 @@ export const insertBefore =
 				} else {
 					// CASE 6
 					// the parent is a fraggle, the new node is a DOM node, and the reference is a fraggle
-					$this.$reified.insertBefore(
+					$this.$reified && $this.$reified.insertBefore(
 						newNode,
 						referenceNode.childNodes.length
 							? referenceNode.childNodes[0]
@@ -331,7 +334,7 @@ export const insertBefore =
 					doNextSiblingAssignment($this, insertedAt - 1, newNode);
 					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
 					shiftRightByNStartingAt($this.$childNodes, 1, insertedAt + 1);
-					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
+					$this.childNodes.splice($this.$childNodes[insertedAt].r - 1, 0, newNode);
 					if ($this.childNodes[0] === newNode) {
 						$this.firstChild = newNode;
 					}
@@ -347,8 +350,9 @@ export const insertBefore =
 					for (let i = 0; i < newNode.childNodes.length; i++) {
 						$this.insertBefore(newNode.childNodes[i], referenceNode);
 					}
-					newNode.$parentNode = $this;
-					newNode.parentNode = $this.$reified;
+					newNode.$logicalParent = $this;
+					newNode.$reified = $this.$reified;
+					newNode.parentNode = $this.parentNode;
 					newNode.isConnected = true;
 					newNode.parentElement = $this.$reified;
 					newNode.nextSibling = referenceNode;
@@ -369,7 +373,7 @@ export const insertBefore =
 						newNode.childNodes.length,
 						insertedAt + 1
 					);
-					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
+					$this.childNodes.splice($this.$childNodes[insertedAt].r - 1, 0, newNode);
 					if ($this.childNodes[0] === newNode && newNode.childNodes.length) {
 						$this.firstChild = newNode.childNodes[0];
 					}
@@ -385,7 +389,8 @@ export const insertBefore =
 					for (let i = 0; i < newNode.childNodes.length; i++) {
 						$this.appendChild(newNode.childNodes[i]);
 					}
-					newNode.$parentNode = $this;
+					newNode.$logicalParent = $this;
+					newNode.$reified = $this.$reified;
 					newNode.parentNode = $this.$reified;
 					newNode.isConnected = true;
 					newNode.parentElement = $this.$reified;
@@ -406,7 +411,7 @@ export const insertBefore =
 					doNextSiblingAssignment($this, insertedAt - 1, newNodeLeftBound);
 					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
 					shiftRightByNStartingAt($this.$childNodes, 1, insertedAt + 1);
-					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
+					$this.childNodes.splice($this.$childNodes[insertedAt].r - 1, 0, newNode);
 					if ($this.childNodes[0] === newNode && newNode.childNodes.length) {
 						$this.firstChild = newNode.childNodes[0];
 					}
@@ -429,7 +434,8 @@ export const insertBefore =
 							referenceAnchor
 						);
 					}
-					newNode.$parentNode = $this;
+					newNode.$logicalParent = $this;
+					newNode.$reified = $this.$reified;
 					newNode.parentNode = $this.$reified;
 					newNode.isConnected = true;
 					newNode.parentElement = $this.$reified;
@@ -451,7 +457,7 @@ export const insertBefore =
 						newNode.childNodes.length,
 						insertedAt + 1
 					);
-					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
+					$this.childNodes.splice($this.$childNodes[insertedAt].r - 1, 0, newNode);
 					if ($this.childNodes[0] === newNode && newNode.childNodes.length) {
 						$this.firstChild = newNode.childNodes[0];
 					}
@@ -466,7 +472,7 @@ export const insertBefore =
 		}
 	};
 
-export const cloneNode = (nodePredicate) => ($this) => {
+const cloneNode = (nodePredicate) => ($this) => {
 	if ($this instanceof Fraggle) {
 		const out = new Fraggle();
 		out.$childNodes = $this.$childNodes.map((n) => cloneNode(n));
@@ -476,7 +482,7 @@ export const cloneNode = (nodePredicate) => ($this) => {
 	}
 };
 
-export const contains = (nodePredicate) => ($this, aChild) => {
+const contains = (nodePredicate) => ($this, aChild) => {
 	if (nodePredicate(aChild) && nodePredicate($this)) {
 		return $this.contains(aChild);
 	} else if (nodePredicate(aChild) && $this instanceof Fraggle) {
@@ -491,7 +497,7 @@ export const contains = (nodePredicate) => ($this, aChild) => {
 		throw new Error("Invalid arguments");
 	}
 };
-export const getRootNode = (nodePredicate) => ($this) => {
+const getRootNode = (nodePredicate) => ($this) => {
 	if ($this instanceof Fraggle) {
 		if (this.$reified) {
 			return this.$reified.getRootNode();
@@ -501,7 +507,7 @@ export const getRootNode = (nodePredicate) => ($this) => {
 		return $this.getRootNode();
 	}
 };
-export const hasChildNodes = (nodePredicate) => ($this) => {
+const hasChildNodes = (nodePredicate) => ($this) => {
 	if ($this instanceof Fraggle) {
 		if (this.$reified) {
 			return this.$reified.hasChildNodes();
@@ -511,9 +517,24 @@ export const hasChildNodes = (nodePredicate) => ($this) => {
 		return $this.hasChildNodes();
 	}
 };
-export const appendChild = (nodePredicate) => ($this, aChild) => {
+const appendChild = (nodePredicate) => ($this, aChild) => {
 	insertBefore(nodePredicate)($this, aChild, null);
 };
-export const normalize = () => {};
-export const removeChild = () => {};
-export const replaceChild = () => {};
+const normalize = () => {};
+const removeChild = () => {};
+const replaceChild = () => {};
+
+module.exports = {
+	appendChild,
+	cloneNode,
+	contains,
+	getRootNode,
+	hasChildNodes,
+	insertBefore,
+	normalize,
+	removeChild,
+	replaceChild,
+	Fraggle,
+	FRAGGLE_NODE_TYPE,
+	FRAGGLE_NODE_NAME,
+};
