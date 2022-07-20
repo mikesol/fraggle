@@ -4,8 +4,7 @@ export const FRAGGLE_NODE_NAME = "#fraggle";
 class Fraggle {
 	$id = null;
 	$reified = null;
-	$leftAbutting = null;
-	$rightAbutting = null;
+	$parentNode = null;
 	$childNodes = null;
 	baseURI = null;
 	childNodes = null;
@@ -29,10 +28,8 @@ class Fraggle {
 		// the div. it is used as a substitute for `$this` when performing
 		// operations like appending
 		this.$reified = null;
-		// the left-most DOM element on the _outside_ of the fraggle. when doing operations like `insertBefore`, we use this to get the actual DOM element we're inserting before.
-		this.$leftAbutting = null;
-		// the right-most DOM element on the _outside_ of the fraggle. when consulting `nextSibling`, we use this to get the actual next sibling in the DOM.
-		this.$rightAbutting = null;
+		// this is either a fraggle, a real node, or null, whereas `parentNode` is always a real node or null
+		this.$parentNode = null;
 		// this is a list of real child nodes and fraggles interleaved. it is used to populate the childNodes list incrementally.
 		// note that nested fraggles may have the same child nodes.
 		// in the DOM, this would be illegal, but for fraggles,
@@ -69,66 +66,6 @@ const shiftRightByNStartingAt = (arr, n, start) => {
 // methods
 export const insertBefore =
 	(nodePredicate) => ($this, newNode, referenceNode) => {
-		// child node starting length
-		let insertedAt;
-		const childNodesStartingLength = $this.childNodes.length;
-		// first, we add the child as a child node of the fraggle
-		// that this updates the internal $childNodes
-		// childNodes will be updated later
-		if ($this instanceof Fraggle) {
-			if (!referenceNode) {
-				$this.$childNodes.push({ l: childNodesStartingLength, n: newNode });
-				insertedAt = childNodesStartingLength;
-			} else {
-				let inserted = false;
-				// todo: is there any way to avoid this traversal
-				for (let i = 0; i < $this.$childNodes.length; i++) {
-					if ($this.$childNodes[i].n === referenceNode) {
-						insertedAt = i;
-						$this.$childNodes.splice(i, 0, {
-							l: $this.$childNodes[i - 1] ? $this.$childNodes[i - 1].r : 0,
-							n: newNode,
-						});
-						inserted = true;
-						break;
-					}
-				}
-				if (!inserted) {
-					return;
-				}
-			}
-		}
-		// helpers
-		const doLeftAbuttingAssignment = () => {
-			for (let i = insertedAt + 1; i < $this.$childNodes.length; i++) {
-				if (nodePredicate($this.$childNodes[i].n)) {
-					// we do not record $leftAbutting for an actual DOM node
-					break;
-				} else if ($this.$childNodes[i].n.childNodes.length) {
-					// if a fraggle has content, assign it the leftAbutting but terminate early. we can do this because anything further to the right will have a different $leftAbutting.
-					$this.$childNodes[i].n.$leftAbutting = newNode;
-					break;
-				} else {
-					// if a fraggle has no content, grab the newNode as $leftAbutting but allow the algorithm to continue. That way other fraggles to the right can also use this as the left abutting node.
-					$this.$childNodes[i].n.$leftAbutting = newNode;
-				}
-			}
-		};
-		const doRightAbuttingAssignment = () => {
-			for (let i = insertedAt - 1; i >= 0; i--) {
-				if (nodePredicate($this.$childNodes[i].n)) {
-					// we do not record $leftAbutting for an actual DOM node
-					break;
-				} else if ($this.$childNodes[i].n.childNodes.length) {
-					// if a fraggle has content, assign it the leftAbutting but terminate early. we can do this because anything further to the right will have a different $leftAbutting.
-					$this.$childNodes[i].n.$rightAbutting = newNode;
-					break;
-				} else {
-					// if a fraggle has no content, grab the newNode as $leftAbutting but allow the algorithm to continue. That way other fraggles to the right can also use this as the left abutting node.
-					$this.$childNodes[i].n.$rightAbutting = newNode;
-				}
-			}
-		};
 		// there are 12 cases to consider
 		// node node node
 		// frag node node
@@ -151,7 +88,7 @@ export const insertBefore =
 				} else if (referenceNode === null) {
 					// CASE 9
 					// this is also the DOM API, plain and simple!
-					$this.insertBefore(newNode, null);
+					$this.appendChild(newNode);
 				} else {
 					// CASE 4
 					// we are inserting a DOM node into a DOM node and the reference is a fragment
@@ -160,63 +97,226 @@ export const insertBefore =
 						newNode,
 						referenceNode.childNodes.length
 							? referenceNode.childNodes[0]
-							: referenceNode.$rightAbutting
+							: referenceNode.nextSibling
 					);
-          let currentNode = referenceNode;
-          while (true) {
-            currentNode.$leftAbutting = newNode;
+					let currentNode = referenceNode;
+					while (true) {
+						currentNode.previousSibling = newNode;
 						if (
 							currentNode.childNodes.length === 0 &&
 							currentNode.nextSibling instanceof Fraggle
 						) {
 							currentNode = currentNode.nextSibling;
 						} else {
-              break;
-            }
-          }
-          referenceNode.previousSibling = newNode;
+							break;
+						}
+					}
+					referenceNode.previousSibling = newNode;
 				}
 			} else {
 				if (nodePredicate(referenceNode)) {
 					// CASE 3
 					// we are inserting a fraggle node into a DOM node and the reference is a node
-          for (let i = 0; i < newNode.childNodes.length; i++) {
-            $this.insertBefore(newNode.childNodes[i], referenceNode);
-          }
-          newNode.nextSibling = referenceNode;
-          newNode.$rightAbutting = referenceNode;
-          // todo prev sibling
-          // todo left abutting
+					const oldPreviousSibling = referenceNode.previousSibling;
+					for (let i = 0; i < newNode.childNodes.length; i++) {
+						$this.insertBefore(newNode.childNodes[i], referenceNode);
+					}
+					newNode.$parentNode = $this;
+					newNode.parentNode = $this;
+					newNode.isConnected = true;
+					newNode.parentElement = $this;
+					newNode.nextSibling = referenceNode;
+					newNode.previousSibling = oldPreviousSibling;
 				} else if (referenceNode === null) {
 					// CASE 10
 					// we are inserting a fraggle at the end of a node
+					const oldLastChild = $this.lastChild;
+					for (let i = 0; i < newNode.childNodes.length; i++) {
+						$this.appendChild(newNode.childNodes[i]);
+					}
+					newNode.$parentNode = $this;
+					newNode.parentNode = $this;
+					newNode.isConnected = true;
+					newNode.parentElement = $this;
+					newNode.nextSibling = null;
+					newNode.previousSibling = oldLastChild;
 				} else {
 					// CASE 5
 					// we are inserting a fraggle into a DOM node and the reference is a fragment
+					for (let i = 0; i < newNode.childNodes.length; i++) {
+						$this.insertBefore(
+							newNode.childNodes[i],
+							referenceNode.childNodes.length
+								? referenceNode.childNodes[0]
+								: referenceNode.nextSibling
+						);
+					}
+					newNode.$parentNode = $this;
+					newNode.parentNode = $this;
+					newNode.isConnected = true;
+					newNode.parentElement = $this;
+					let currentNode = referenceNode;
+					const newNodeBound = newNode.childNodes.length
+						? newNode.childNodes[newNode.childNodes.length - 1]
+						: newNode.previousSibling;
+					while (true) {
+						currentNode.previousSibling = newNodeBound;
+						if (
+							currentNode.childNodes.length === 0 &&
+							currentNode.nextSibling instanceof Fraggle
+						) {
+							currentNode = currentNode.nextSibling;
+						} else {
+							break;
+						}
+					}
+					currentNode = newNode;
+					const referenceNodeBound = referenceNodeBound.childNodes.length
+						? newNode.childNodes[0]
+						: newNode.nextSibling;
+					while (true) {
+						currentNode.nextSibling = referenceNodeBound;
+						if (
+							currentNode.childNodes.length === 0 &&
+							currentNode.previousSibling instanceof Fraggle
+						) {
+							currentNode = currentNode.previousSibling;
+						} else {
+							break;
+						}
+					}
 				}
 			}
 		} else {
+			//
+			//
+			// $this is now a fraggle
+			//
+			//
+			// helpers
+			const doPreviousSiblingAssignment = ($$this, marker, node) => {
+				let stopped = false;
+				for (let i = marker; i < $$this.$childNodes.length; i++) {
+					if (nodePredicate($$this.$childNodes[i].n)) {
+						// we do not record previousSibling for an actual DOM node
+						stopped = true;
+						break;
+					} else if ($$this.$childNodes[i].n.childNodes.length) {
+						// if a fraggle has content, assign it the previousSibling but terminate early. we can do this because anything further to the right will have a different previousSibling.
+						$$this.$childNodes[i].n.previousSibling = node;
+						stopped = true;
+						break;
+					} else {
+						// if a fraggle has no content, grab the node as previousSibling but allow the algorithm to continue. That way other fraggles to the right can also use this as the left abutting node.
+						$$this.$childNodes[i].n.previousSibling = node;
+					}
+				}
+				if (!stopped && $$this.$parentNode instanceof Fraggle) {
+					let i = 0;
+					for (; i < $$this.$parentNode.$childNodes.length; i++) {
+						if ($$this.$parentNode.$childNodes[i].n === $$this) {
+							break;
+						}
+					}
+					doPreviousSiblingAssignment($$this.$parentNode, i + 1, node);
+				}
+			};
+			const doNextSiblingAssignment = ($$this, marker, node) => {
+				let stopped = false;
+				for (let i = marker; i >= 0; i--) {
+					if (nodePredicate($$this.$childNodes[i].n)) {
+						// we do not record nextSibling for an actual DOM node
+						stopped = true;
+						break;
+					} else if ($$this.$childNodes[i].n.childNodes.length) {
+						// if a fraggle has content, assign it the nextSibling but terminate early. we can do this because anything further to the left will have a different nextSibling.
+						$$this.$childNodes[i].n.nextSibling = node;
+						stopped = true;
+						break;
+					} else {
+						// if a fraggle has no content, grab the node as nextSibling but allow the algorithm to continue. That way other fraggles to the left can also use this as the right abutting node.
+						$$this.$childNodes[i].n.nextSibling = node;
+					}
+				}
+				if (!stopped && $$this.$parentNode instanceof Fraggle) {
+					let i = 0;
+					for (; i < $$this.$parentNode.$childNodes.length; i++) {
+						if ($$this.$parentNode.$childNodes[i].n === $$this) {
+							break;
+						}
+					}
+					doNextSiblingAssignment($$this.$parentNode, i - 1, node);
+				}
+			};
+			//
+			//
+			// needed for all fraggles
+			//
+			//
+			// child node starting length
+			let insertedAt;
+			const childNodesStartingLength = $this.childNodes.length;
+			// we add the child to $childNodes
+			// we set the `l` and `n` properties of the child
+			// we set `r` later once we know how many children there are
+			if (referenceNode == null) {
+				$this.$childNodes.push({ l: childNodesStartingLength, n: newNode });
+				insertedAt = childNodesStartingLength;
+			} else {
+				let inserted = false;
+				// todo: is there any way to avoid this traversal
+				for (let i = 0; i < $this.$childNodes.length; i++) {
+					if ($this.$childNodes[i].n === referenceNode) {
+						insertedAt = i;
+						$this.$childNodes.splice(i, 0, {
+							l: $this.$childNodes[i - 1] ? $this.$childNodes[i - 1].r : 0,
+							n: newNode,
+						});
+						inserted = true;
+						break;
+					}
+				}
+				if (!inserted) {
+					return;
+				}
+			}
+			// algo
 			if (nodePredicate(newNode)) {
 				if (nodePredicate(referenceNode)) {
 					// CASE 2
 					// the parent is a fraggle, but the reference and the new node are both DOM nodes
 					$this.$reified.insertBefore(newNode, referenceNode);
-					// we need to update the left abutting of all fraggles to the right
-					doLeftAbuttingAssignment();
-					if (insertedAt !== 0) {
-						doRightAbuttingAssignment();
-					}
+					doPreviousSiblingAssignment($this, insertedAt + 1, newNode);
+					doNextSiblingAssignment($this, insertedAt - 1, newNode);
 					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
 					shiftRightByNStartingAt($this.$childNodes, 1, insertedAt + 1);
 					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
+					if ($this.childNodes[0] === newNode) {
+						$this.firstChild = newNode;
+					}
+					if ($this.childNodes[$this.childNodes.length - 1] === newNode) {
+						$this.lastChild = newNode;
+					}
 				} else if (referenceNode === null) {
 					// CASE 11
 					// we are inserting a node at the end of a fraggle
+					$this.$reified.appendChild(newNode);
+					// note that doPreviousSiblingAssignment will immediately kick
+					// up a level as there is nothing to the left
+					doPreviousSiblingAssignment($this, insertedAt + 1, newNode);
+					doNextSiblingAssignment($this, insertedAt - 1, newNode);
 					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
-					// we don't need to propagate left abutting as there is nothing to the left
-					// no shift needed as we're at the end
-					// we can just push
+					// we do not need to call shiftRightByNStartingAt so comment it out
+					// as we're at the end, there's no shift
+					// shiftRightByNStartingAt($this.$childNodes, 1, insertedAt + 1);\
+					// we don't need to call splice. instead, we can call push
 					$this.childNodes.push(newNode);
+					if ($this.childNodes[0] === newNode) {
+						$this.firstChild = newNode;
+					}
+					if ($this.childNodes[$this.childNodes.length - 1] === newNode) {
+						$this.lastChild = newNode;
+					}
 				} else {
 					// CASE 6
 					// the parent is a fraggle, the new node is a DOM node, and the reference is a fraggle
@@ -224,27 +324,143 @@ export const insertBefore =
 						newNode,
 						referenceNode.childNodes.length
 							? referenceNode.childNodes[0]
-							: referenceNode.$rightAbutting
+							: referenceNode.nextSibling
 					);
 					// we need to update the left abutting of all fraggles to the right
-					doLeftAbuttingAssignment();
-					if (insertedAt !== 0) {
-						doRightAbuttingAssignment();
-					}
+					doPreviousSiblingAssignment($this, insertedAt + 1, newNode);
+					doNextSiblingAssignment($this, insertedAt - 1, newNode);
 					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
 					shiftRightByNStartingAt($this.$childNodes, 1, insertedAt + 1);
 					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
+					if ($this.childNodes[0] === newNode) {
+						$this.firstChild = newNode;
+					}
+					if ($this.childNodes[$this.childNodes.length - 1] === newNode) {
+						$this.lastChild = newNode;
+					}
 				}
 			} else {
 				if (nodePredicate(referenceNode)) {
 					// CASE 7
 					// the parent is a fraggle, the new node is a fraggle, and the reference node is a DOM node
+					const oldPreviousSibling = referenceNode.previousSibling;
+					for (let i = 0; i < newNode.childNodes.length; i++) {
+						$this.insertBefore(newNode.childNodes[i], referenceNode);
+					}
+					newNode.$parentNode = $this;
+					newNode.parentNode = $this.$reified;
+					newNode.isConnected = true;
+					newNode.parentElement = $this.$reified;
+					newNode.nextSibling = referenceNode;
+					newNode.previousSibling = oldPreviousSibling;
+					//
+					const newNodeLeftBound = newNode.childNodes.length
+						? newNode.childNodes[0]
+						: newNode.nextSibling;
+					const newNodeRightBound = newNode.childNodes.length
+						? newNode.childNodes[newNode.childNodes.length - 1]
+						: newNode.previousSibling;
+					doPreviousSiblingAssignment($this, insertedAt + 1, newNodeRightBound);
+					doNextSiblingAssignment($this, insertedAt - 1, newNodeLeftBound);
+					$this.$childNodes[insertedAt].r =
+						$this.$childNodes[insertedAt].l + newNode.childNodes.length;
+					shiftRightByNStartingAt(
+						$this.$childNodes,
+						newNode.childNodes.length,
+						insertedAt + 1
+					);
+					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
+					if ($this.childNodes[0] === newNode && newNode.childNodes.length) {
+						$this.firstChild = newNode.childNodes[0];
+					}
+					if (
+						$this.childNodes[$this.childNodes.length - 1] === newNode &&
+						newNode.childNodes.length
+					) {
+						$this.lastChild = newNode.childNodes[newNode.childNodes.length - 1];
+					}
 				} else if (referenceNode === null) {
 					// CASE 12
 					// we are inserting a fraggle at the end of a fraggle
+					for (let i = 0; i < newNode.childNodes.length; i++) {
+						$this.appendChild(newNode.childNodes[i]);
+					}
+					newNode.$parentNode = $this;
+					newNode.parentNode = $this.$reified;
+					newNode.isConnected = true;
+					newNode.parentElement = $this.$reified;
+          // the next sibling is the same as $this's next sibling
+          // because we are dealing with real DOM elements
+					newNode.nextSibling = $this.nextSibling;
+          // the previous sibling must be whatever is at the end of $this
+          // we set this _before_ updating lastChild
+					newNode.previousSibling = $this.lastChild;
+					//
+					const newNodeLeftBound = newNode.childNodes.length
+						? newNode.childNodes[0]
+						: newNode.nextSibling;
+					const newNodeRightBound = newNode.childNodes.length
+						? newNode.childNodes[newNode.childNodes.length - 1]
+						: newNode.previousSibling;
+					doPreviousSiblingAssignment($this, insertedAt + 1, newNodeRightBound);
+					doNextSiblingAssignment($this, insertedAt - 1, newNodeLeftBound);
+					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
+					shiftRightByNStartingAt($this.$childNodes, 1, insertedAt + 1);
+					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
+					if ($this.childNodes[0] === newNode && newNode.childNodes.length) {
+						$this.firstChild = newNode.childNodes[0];
+					}
+					if (
+						$this.childNodes[$this.childNodes.length - 1] === newNode &&
+						newNode.childNodes.length
+					) {
+						$this.lastChild = newNode.childNodes[newNode.childNodes.length - 1];
+					}
 				} else {
 					// CASE 8
 					// fraggles all the way down!
+          const oldPreviousSibling = referenceNode.previousSibling;
+          const referenceAnchor = referenceNode.childNodes.length
+						? referenceNode.childNodes[0]
+						: referenceNode.nextSibling;
+					for (let i = 0; i < newNode.childNodes.length; i++) {
+						$this.insertBefore(
+							newNode.childNodes[i],
+							referenceAnchor
+						);
+					}
+					newNode.$parentNode = $this;
+					newNode.parentNode = $this.$reified;
+					newNode.isConnected = true;
+					newNode.parentElement = $this.$reified;
+					newNode.nextSibling = referenceAnchor;
+					newNode.previousSibling = oldPreviousSibling;
+					//
+					const newNodeLeftBound = newNode.childNodes.length
+						? newNode.childNodes[0]
+						: newNode.nextSibling;
+					const newNodeRightBound = newNode.childNodes.length
+						? newNode.childNodes[newNode.childNodes.length - 1]
+						: newNode.previousSibling;
+					doPreviousSiblingAssignment($this, insertedAt + 1, newNodeRightBound);
+					doNextSiblingAssignment($this, insertedAt - 1, newNodeLeftBound);
+					$this.$childNodes[insertedAt].r =
+						$this.$childNodes[insertedAt].l + newNode.childNodes.length;
+					shiftRightByNStartingAt(
+						$this.$childNodes,
+						newNode.childNodes.length,
+						insertedAt + 1
+					);
+					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
+					if ($this.childNodes[0] === newNode && newNode.childNodes.length) {
+						$this.firstChild = newNode.childNodes[0];
+					}
+					if (
+						$this.childNodes[$this.childNodes.length - 1] === newNode &&
+						newNode.childNodes.length
+					) {
+						$this.lastChild = newNode.childNodes[newNode.childNodes.length - 1];
+					}
 				}
 			}
 		}
