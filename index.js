@@ -98,6 +98,37 @@ export const insertBefore =
 				}
 			}
 		}
+		// helpers
+		const doLeftAbuttingAssignment = () => {
+			for (let i = insertedAt + 1; i < $this.$childNodes.length; i++) {
+				if (nodePredicate($this.$childNodes[i].n)) {
+					// we do not record $leftAbutting for an actual DOM node
+					break;
+				} else if ($this.$childNodes[i].n.childNodes.length) {
+					// if a fraggle has content, assign it the leftAbutting but terminate early. we can do this because anything further to the right will have a different $leftAbutting.
+					$this.$childNodes[i].n.$leftAbutting = newNode;
+					break;
+				} else {
+					// if a fraggle has no content, grab the newNode as $leftAbutting but allow the algorithm to continue. That way other fraggles to the right can also use this as the left abutting node.
+					$this.$childNodes[i].n.$leftAbutting = newNode;
+				}
+			}
+		};
+		const doRightAbuttingAssignment = () => {
+			for (let i = insertedAt - 1; i >= 0; i--) {
+				if (nodePredicate($this.$childNodes[i].n)) {
+					// we do not record $leftAbutting for an actual DOM node
+					break;
+				} else if ($this.$childNodes[i].n.childNodes.length) {
+					// if a fraggle has content, assign it the leftAbutting but terminate early. we can do this because anything further to the right will have a different $leftAbutting.
+					$this.$childNodes[i].n.$rightAbutting = newNode;
+					break;
+				} else {
+					// if a fraggle has no content, grab the newNode as $leftAbutting but allow the algorithm to continue. That way other fraggles to the right can also use this as the left abutting node.
+					$this.$childNodes[i].n.$rightAbutting = newNode;
+				}
+			}
+		};
 		// there are 12 cases to consider
 		// node node node
 		// frag node node
@@ -113,57 +144,14 @@ export const insertBefore =
 		// frag frag null
 		if (nodePredicate($this)) {
 			if (nodePredicate(newNode)) {
-				const doLeftAbuttingAssignment = () => {
-					for (let i = insertedAt + 1; i < $this.$childNodes.length; i++) {
-						if (nodePredicate($this.$childNodes[i].n)) {
-							// we do not record $leftAbutting for an actual DOM node
-							break;
-						} else if ($this.$childNodes[i].n.childNodes.length) {
-							// if a fraggle has content, assign it the leftAbutting but terminate early. we can do this because anything further to the right will have a different $leftAbutting.
-							$this.$childNodes[i].n.$leftAbutting = newNode;
-							break;
-						} else {
-							// if a fraggle has no content, grab the newNode as $leftAbutting but allow the algorithm to continue. That way other fraggles to the right can also use this as the left abutting node.
-							$this.$childNodes[i].n.$leftAbutting = newNode;
-						}
-					}
-				};
-				const doRightAbuttingAssignment = () => {
-					for (let i = insertedAt - 1; i >= 0; i--) {
-						if (nodePredicate($this.$childNodes[i].n)) {
-							// we do not record $leftAbutting for an actual DOM node
-							break;
-						} else if ($this.$childNodes[i].n.childNodes.length) {
-							// if a fraggle has content, assign it the leftAbutting but terminate early. we can do this because anything further to the right will have a different $leftAbutting.
-							$this.$childNodes[i].n.$rightAbutting = newNode;
-							break;
-						} else {
-							// if a fraggle has no content, grab the newNode as $leftAbutting but allow the algorithm to continue. That way other fraggles to the right can also use this as the left abutting node.
-							$this.$childNodes[i].n.$rightAbutting = newNode;
-						}
-					}
-				};
 				if (nodePredicate(referenceNode)) {
 					// CASE 1
 					// this is the DOM API, plain and simple!
 					$this.insertBefore(newNode, referenceNode);
-					// we need to update the left abutting of all fraggles to the right
-					doLeftAbuttingAssignment();
-          if (insertedAt !== 0) {
-            doRightAbuttingAssignment();
-          }
-					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
-					shiftRightByNStartingAt($this.$childNodes, 1, insertedAt + 1);
-					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
 				} else if (referenceNode === null) {
 					// CASE 9
 					// this is also the DOM API, plain and simple!
-					$this.insertBefore(newNode, referenceNode);
-					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
-					// we don't need to propagate left abutting as there is nothing to the left
-					// no shift needed as we're at the end
-					// we can just push
-					$this.childNodes.push(newNode);
+					$this.insertBefore(newNode, null);
 				} else {
 					// CASE 4
 					// we are inserting a DOM node into a DOM node and the reference is a fragment
@@ -174,20 +162,31 @@ export const insertBefore =
 							? referenceNode.childNodes[0]
 							: referenceNode.$rightAbutting
 					);
-					// we need to update the left abutting of all fraggles to the right
-					doLeftAbuttingAssignment();
-          if (insertedAt !== 0) {
-						doRightAbuttingAssignment();
-					}
-					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
-					shiftRightByNStartingAt($this.$childNodes, 1, insertedAt + 1);
-					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
-					// the reference node's right
+          let currentNode = referenceNode;
+          while (true) {
+            currentNode.$leftAbutting = newNode;
+						if (
+							currentNode.childNodes.length === 0 &&
+							currentNode.nextSibling instanceof Fraggle
+						) {
+							currentNode = currentNode.nextSibling;
+						} else {
+              break;
+            }
+          }
+          referenceNode.previousSibling = newNode;
 				}
 			} else {
 				if (nodePredicate(referenceNode)) {
 					// CASE 3
 					// we are inserting a fraggle node into a DOM node and the reference is a node
+          for (let i = 0; i < newNode.childNodes.length; i++) {
+            $this.insertBefore(newNode.childNodes[i], referenceNode);
+          }
+          newNode.nextSibling = referenceNode;
+          newNode.$rightAbutting = referenceNode;
+          // todo prev sibling
+          // todo left abutting
 				} else if (referenceNode === null) {
 					// CASE 10
 					// we are inserting a fraggle at the end of a node
@@ -201,12 +200,40 @@ export const insertBefore =
 				if (nodePredicate(referenceNode)) {
 					// CASE 2
 					// the parent is a fraggle, but the reference and the new node are both DOM nodes
+					$this.$reified.insertBefore(newNode, referenceNode);
+					// we need to update the left abutting of all fraggles to the right
+					doLeftAbuttingAssignment();
+					if (insertedAt !== 0) {
+						doRightAbuttingAssignment();
+					}
+					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
+					shiftRightByNStartingAt($this.$childNodes, 1, insertedAt + 1);
+					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
 				} else if (referenceNode === null) {
 					// CASE 11
 					// we are inserting a node at the end of a fraggle
+					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
+					// we don't need to propagate left abutting as there is nothing to the left
+					// no shift needed as we're at the end
+					// we can just push
+					$this.childNodes.push(newNode);
 				} else {
 					// CASE 6
 					// the parent is a fraggle, the new node is a DOM node, and the reference is a fraggle
+					$this.$reified.insertBefore(
+						newNode,
+						referenceNode.childNodes.length
+							? referenceNode.childNodes[0]
+							: referenceNode.$rightAbutting
+					);
+					// we need to update the left abutting of all fraggles to the right
+					doLeftAbuttingAssignment();
+					if (insertedAt !== 0) {
+						doRightAbuttingAssignment();
+					}
+					$this.$childNodes[insertedAt].r = $this.$childNodes[insertedAt].l + 1;
+					shiftRightByNStartingAt($this.$childNodes, 1, insertedAt + 1);
+					$this.childNodes.splice($this.$childNodes[insertedAt].r, 0, newNode);
 				}
 			} else {
 				if (nodePredicate(referenceNode)) {
@@ -269,8 +296,8 @@ export const hasChildNodes = (nodePredicate) => ($this) => {
 	}
 };
 export const appendChild = (nodePredicate) => ($this, aChild) => {
-  insertBefore(nodePredicate)($this, aChild, null);
-}
+	insertBefore(nodePredicate)($this, aChild, null);
+};
 export const normalize = () => {};
 export const removeChild = () => {};
 export const replaceChild = () => {};
