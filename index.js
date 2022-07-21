@@ -6,6 +6,8 @@ class Fraggle {
 	$reified = null;
 	$logicalParent = null;
 	$childNodes = null;
+	$previousSibling = null;
+	$nextSibling = null;
 	baseURI = null;
 	// childNodes = null;
 	// firstChild = null;
@@ -152,38 +154,56 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				// CASE 1
 				// this is the DOM API, plain and simple!
 				$this.insertBefore(newNode, referenceNode);
+				newNode.$nextSibling = referenceNode;
+				referenceNode.$previousSibling = newNode;
 			} else if (referenceNode === null) {
 				// CASE 9
 				// this is also the DOM API, plain and simple!
 				$this.appendChild(newNode);
+				newNode.$previousSibling =
+					newNode.previousSibling && newNode.previousSibling.$$fraggle
+						? newNode.previousSibling.$$fraggle
+						: newNode.previousSibling;
+				if (newNode.previousSibling && newNode.previousSibling.$$fraggle) {
+					newNode.previousSibling.$$fraggle.$nextSibling = newNode;
+					newNode.previousSibling.$$fraggle.nextSibling = newNode;
+				}
 			} else {
 				// CASE 4
 				// we are inserting a DOM node into a DOM node and the reference is a fraggle
 				// we use either the first child of the reference or, if it is empty, its right abutting
+				// the actual reference will be the first child in the fraggle or, if none
+				// exists, the nextSibling
 				const effectiveReference =
 					referenceNode.$firstChildNode() || referenceNode.nextSibling;
+				// do the insertion
 				$this.insertBefore(newNode, effectiveReference);
+				// our newNode is now the $previousSibling of the reference node
+				referenceNode.$previousSibling = newNode;
+				newNode.$nextSibling = referenceNode;
+				if (!newNode.$$isPreviousSiblingOf) {
+					newNode.$$isPreviousSiblingOf = [];
+				}
 				let currentNode = referenceNode;
+				// iterate over $nextSiblings, doing assignments of previousSibling
 				while (true) {
 					currentNode.previousSibling = newNode;
+					newNode.$$isPreviousSiblingOf.push(currentNode);
 					const firstChildNode = currentNode.$firstChildNode();
-					if (!firstChildNode && currentNode.nextSibling instanceof Fraggle) {
-						currentNode = currentNode.nextSibling;
+					if (!firstChildNode && currentNode.$nextSibling instanceof Fraggle) {
+						currentNode = currentNode.$nextSibling;
 					} else {
 						break;
 					}
 				}
-				referenceNode.previousSibling = newNode;
-				if (!newNode.$$isPreviousSiblingOf) {
-					newNode.$$isPreviousSiblingOf = [];
-				}
-				newNode.$$isPreviousSiblingOf.push(referenceNode);
 			}
 		} else {
 			if (nodePredicate(referenceNode)) {
 				// CASE 3
 				// we are inserting a fraggle node into a DOM node and the reference is a node
+				// the old previous sibling will now be the previous sibling of the fraggle
 				const oldPreviousSibling = referenceNode.previousSibling;
+				const $oldPreviousSibling = referenceNode.$previousSibling;
 				for (const newChildNode of newNode.$childNodeIterator()) {
 					$this.insertBefore(newChildNode, referenceNode);
 				}
@@ -193,14 +213,40 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				newNode.isConnected = true;
 				newNode.parentElement = $this;
 				newNode.nextSibling = referenceNode;
+				newNode.$nextSibling = referenceNode;
+				referenceNode.$previousSibling = newNode;
 				if (!referenceNode.$$isNextSiblingOf) {
 					referenceNode.$$isNextSiblingOf = [];
 				}
 				referenceNode.$$isNextSiblingOf.push(newNode);
 				newNode.previousSibling = oldPreviousSibling;
+				newNode.$previousSibling = $oldPreviousSibling;
+				if (oldPreviousSibling && oldPreviousSibling.$$fraggle) {
+					oldPreviousSibling.$$fragle.$nextSibling = newNode;
+					let currentNode = oldPreviousSibling.$$fraggle;
+					// iterate over $previousSibling, doing assignments of nextSibling
+					// do this ONLY IF the newNode actually contains a child (called fc below)
+					// otherwise, we don't need to do any updating
+					const fc = newNode.$firstChildNode();
+					while (true && fc) {
+						currentNode.nextSibling = fc;
+						fc.$$isNextSiblingOf.push(currentNode);
+						const firstChildNode = currentNode.$firstChildNode();
+						if (
+							!firstChildNode &&
+							currentNode.$previousSibling instanceof Fraggle
+						) {
+							currentNode = currentNode.$previousSibling;
+						} else {
+							break;
+						}
+					}
+				}
 			} else if (referenceNode === null) {
 				// CASE 10
 				// we are inserting a fraggle at the end of a node
+				// similar to above, we need to move left to assign nextSiblings
+				// as needed
 				const oldLastChild = $this.lastChild;
 				for (const newChildNode of newNode.$childNodeIterator()) {
 					$this.appendChild(newChildNode);
@@ -212,9 +258,37 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				newNode.parentElement = $this;
 				newNode.nextSibling = null;
 				newNode.previousSibling = oldLastChild;
+				newNode.$previousSibling =
+					oldLastChild && oldLastChild.$$fraggle
+						? oldLastChild.$$fraggle
+						: oldLastChild;
+				// todo: code dup of above
+				// consolidate?
+				if (oldLastChild && oldLastChild.$$fraggle) {
+					oldLastChild.$$fragle.$nextSibling = newNode;
+					let currentNode = oldLastChild.$$fraggle;
+					// iterate over $previousSibling, doing assignments of nextSibling
+					// do this ONLY IF the newNode actually contains a child (called fc below)
+					// otherwise, we don't need to do any updating
+					const fc = newNode.$firstChildNode();
+					while (true && fc) {
+						currentNode.nextSibling = fc;
+						fc.$$isNextSiblingOf.push(currentNode);
+						const firstChildNode = currentNode.$firstChildNode();
+						if (
+							!firstChildNode &&
+							currentNode.$previousSibling instanceof Fraggle
+						) {
+							currentNode = currentNode.$previousSibling;
+						} else {
+							break;
+						}
+					}
+				}
 			} else {
 				// CASE 5
-				// we are inserting a fraggle into a DOM node and the reference is a fragment
+				// we are inserting a fraggle into a DOM node and the reference is a fraggle
+				const $previousPreviousSibling = referenceNode.$previousSibling;
 				const effectiveReference =
 					referenceNode.$firstChildNode() || referenceNode.nextSibling;
 				let newNodeFirstChild = null;
@@ -229,40 +303,48 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				newNode.parentNode = $this.parentNode;
 				newNode.isConnected = true;
 				newNode.parentElement = $this;
-				let currentNode = referenceNode;
-				const newNodeBound = newNodeLastChild || newNode.previousSibling;
-				while (true) {
-					const currentNodeFirstChild = currentNode.$firstChildNode();
-					currentNode.previousSibling = newNodeBound;
-					if (!newNodeBound.$$isPreviousSiblingOf) {
-						newNodeBound.$$isPreviousSiblingOf = [];
+				newNode.$nextSibling = referenceNode;
+				referenceNode.$previousSibling = newNode;
+				if (newNodeLastChild) {
+					// the reference node and all nodes to the right will need this as a previous sibling
+					if (!newNodeLastChild.$$isPreviousSiblingOf) {
+						newNodeLastChild.$$isPreviousSiblingOf = [];
 					}
-					newNodeBound.$$isPreviousSiblingOf.push(currentNode);
-					if (
-						!currentNodeFirstChild &&
-						currentNode.nextSibling instanceof Fraggle
-					) {
-						currentNode = currentNode.nextSibling;
-					} else {
-						break;
+					let currentNode = referenceNode;
+					// iterate over $nextSiblings, doing assignments of previousSibling
+					while (true && currentNode) {
+						currentNode.previousSibling = newNodeLastChild;
+						newNode.$$isPreviousSiblingOf.push(currentNode);
+						const firstChildNode = currentNode.$firstChildNode();
+						if (
+							!firstChildNode &&
+							currentNode.$nextSibling instanceof Fraggle
+						) {
+							currentNode = currentNode.$nextSibling;
+						} else {
+							break;
+						}
 					}
 				}
-				currentNode = newNode;
-				const referenceNodeBound = newNodeFirstChild || newNode.nextSibling;
-				while (true) {
-					const currentNodeFirstChild = currentNode.$firstChildNode();
-					currentNode.nextSibling = referenceNodeBound;
-					if (!referenceNodeBound.$$isNextSiblingOf) {
-						referenceNodeBound.$$isNextSiblingOf = [];
+				if (newNodeFirstChild) {
+					// the reference node and all nodes to the left will need this as a next sibling
+					if (!newNodeFirstChild.$$isNextSiblingOf) {
+						newNodeFirstChild.$$isNextSiblingOf = [];
 					}
-					referenceNodeBound.$$isNextSiblingOf.push(currentNode);
-					if (
-						!currentNodeFirstChild &&
-						currentNode.previousSibling instanceof Fraggle
-					) {
-						currentNode = currentNode.previousSibling;
-					} else {
-						break;
+					let currentNode = $previousPreviousSibling;
+					// iterate over $nextSiblings, doing assignments of previousSibling
+					while (true && currentNode) {
+						currentNode.nextSibling = newNodeFirstChild;
+						newNode.$$isNextSiblingOf.push(currentNode);
+						const firstChildNode = currentNode.$firstChildNode();
+						if (
+							!firstChildNode &&
+							currentNode.$previousSibling instanceof Fraggle
+						) {
+							currentNode = currentNode.$previousSibling;
+						} else {
+							break;
+						}
 					}
 				}
 			}
@@ -386,12 +468,20 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 			if (nodePredicate(referenceNode)) {
 				// CASE 2
 				// the parent is a fraggle, but the reference and the new node are both DOM nodes
+				referenceNode.$previousSibling = newNode;
+				newNode.$nextSibling = referenceNode;
 				$this.$reified && $this.$reified.insertBefore(newNode, referenceNode);
 				doPreviousSiblingAssignment($this, insertedAt + 1, newNode);
 				doNextSiblingAssignment($this, insertedAt - 1, newNode);
 			} else if (referenceNode === null) {
 				// CASE 11
 				// we are inserting a node at the end of a fraggle
+				if ($this.childNodes.length > 1) {
+					$this.childNodes[$this.childNodes.length - 2].$nextSibling =
+						$this.childNodes[$this.childNodes.length - 1];
+					$this.childNodes[$this.childNodes.length - 1].$previousSibling =
+						$this.childNodes[$this.childNodes.length - 2];
+				}
 				$this.$reified && $this.$reified.appendChild(newNode);
 				// note that doPreviousSiblingAssignment will immediately kick
 				// up a level as there is nothing to the left
@@ -404,6 +494,8 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 			} else {
 				// CASE 6
 				// the parent is a fraggle, the new node is a DOM node, and the reference is a fraggle
+				referenceNode.$previousSibling = newNode;
+				newNode.$nextSibling = referenceNode;
 				$this.$reified &&
 					$this.$reified.insertBefore(
 						newNode,
@@ -423,6 +515,8 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 						$this.$reified.insertBefore(newChildNode, referenceNode);
 					}
 				}
+				referenceNode.$previousSibling = newNode;
+				newNode.$nextSibling = referenceNode;
 				newNode.$logicalParent = $this;
 				newNode.$reified = $this.$reified;
 				newNode.parentNode = $this.parentNode;
@@ -448,6 +542,12 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 			} else if (referenceNode === null) {
 				// CASE 12
 				// we are inserting a fraggle at the end of a fraggle
+				if ($this.childNodes.length > 1) {
+					$this.childNodes[$this.childNodes.length - 2].$nextSibling =
+						$this.childNodes[$this.childNodes.length - 1];
+					$this.childNodes[$this.childNodes.length - 1].$previousSibling =
+						$this.childNodes[$this.childNodes.length - 2];
+				}
 				if ($this.$reified) {
 					for (const newChildNode of newNode.$childNodeIterator()) {
 						$this.$reified.appendChild(newChildNode, referenceNode);
@@ -486,6 +586,8 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 			} else {
 				// CASE 8
 				// fraggles all the way down!
+				referenceNode.$previousSibling = newNode;
+				newNode.$nextSibling = referenceNode;
 				const oldPreviousSibling = referenceNode.previousSibling;
 				const referenceAnchor = referenceNode.$firstChildNode();
 				if ($this.$reified) {
