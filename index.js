@@ -86,7 +86,10 @@ class Fraggle {
 					for (let i = cur[1]; i >= 0; i--) {
 						if (cur[0][i] instanceof Fraggle) {
 							stack.push([cur[0], i - 1]);
-							stack.push([cur[0][i].$childNodes, cur[0][i].$childNodes.length - 1]);
+							stack.push([
+								cur[0][i].$childNodes,
+								cur[0][i].$childNodes.length - 1,
+							]);
 							break;
 						} else {
 							yield cur[0][i];
@@ -155,7 +158,7 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				$this.appendChild(newNode);
 			} else {
 				// CASE 4
-				// we are inserting a DOM node into a DOM node and the reference is a fragment
+				// we are inserting a DOM node into a DOM node and the reference is a fraggle
 				// we use either the first child of the reference or, if it is empty, its right abutting
 				const effectiveReference =
 					referenceNode.$firstChildNode() || referenceNode.nextSibling;
@@ -171,6 +174,10 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 					}
 				}
 				referenceNode.previousSibling = newNode;
+				if (!newNode.$$isPreviousSiblingOf) {
+					newNode.$$isPreviousSiblingOf = [];
+				}
+				newNode.$$isPreviousSiblingOf.push(referenceNode);
 			}
 		} else {
 			if (nodePredicate(referenceNode)) {
@@ -186,6 +193,10 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				newNode.isConnected = true;
 				newNode.parentElement = $this;
 				newNode.nextSibling = referenceNode;
+				if (!referenceNode.$$isNextSiblingOf) {
+					referenceNode.$$isNextSiblingOf = [];
+				}
+				referenceNode.$$isNextSiblingOf.push(newNode);
 				newNode.previousSibling = oldPreviousSibling;
 			} else if (referenceNode === null) {
 				// CASE 10
@@ -223,6 +234,10 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				while (true) {
 					const currentNodeFirstChild = currentNode.$firstChildNode();
 					currentNode.previousSibling = newNodeBound;
+					if (!newNodeBound.$$isPreviousSiblingOf) {
+						newNodeBound.$$isPreviousSiblingOf = [];
+					}
+					newNodeBound.$$isPreviousSiblingOf.push(currentNode);
 					if (
 						!currentNodeFirstChild &&
 						currentNode.nextSibling instanceof Fraggle
@@ -237,6 +252,10 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				while (true) {
 					const currentNodeFirstChild = currentNode.$firstChildNode();
 					currentNode.nextSibling = referenceNodeBound;
+					if (!referenceNodeBound.$$isNextSiblingOf) {
+						referenceNodeBound.$$isNextSiblingOf = [];
+					}
+					referenceNodeBound.$$isNextSiblingOf.push(currentNode);
 					if (
 						!currentNodeFirstChild &&
 						currentNode.previousSibling instanceof Fraggle
@@ -255,7 +274,8 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 		//
 		//
 		// helpers
-		const doPreviousSiblingAssignment = ($$this, marker, node) => {
+
+		const $$doPreviousSiblingAssignment = ($$this, marker, node) => {
 			let stopped = false;
 			for (let i = marker; i < $$this.$childNodes.length; i++) {
 				if (nodePredicate($$this.$childNodes[i])) {
@@ -265,11 +285,13 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				} else if ($$this.$childNodes[i].$firstChildNode()) {
 					// if a fraggle has content, assign it the previousSibling but terminate early. we can do this because anything further to the right will have a different previousSibling.
 					$$this.$childNodes[i].previousSibling = node;
+					node.$$isPreviousSiblingOf.push($$this.$childNodes[i]);
 					stopped = true;
 					break;
 				} else {
 					// if a fraggle has no content, grab the node as previousSibling but allow the algorithm to continue. That way other fraggles to the right can also use this as the left abutting node.
 					$$this.$childNodes[i].previousSibling = node;
+					node.$$isPreviousSiblingOf.push($$this.$childNodes[i]);
 				}
 			}
 			if (!stopped && $$this.$logicalParent instanceof Fraggle) {
@@ -279,10 +301,20 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 						break;
 					}
 				}
-				doPreviousSiblingAssignment($$this.$logicalParent, i + 1, node);
+				$$doPreviousSiblingAssignment($$this.$logicalParent, i + 1, node);
 			}
 		};
-		const doNextSiblingAssignment = ($$this, marker, node) => {
+
+		const doPreviousSiblingAssignment = ($$this, marker, node) => {
+			if (node) {
+				if (!node.$$isPreviousSiblingOf) {
+					node.$$isPreviousSiblingOf = [];
+				}
+			}
+			$$doPreviousSiblingAssignment($$this, marker, node);
+		};
+
+		const $$doNextSiblingAssignment = ($$this, marker, node) => {
 			let stopped = false;
 			for (let i = marker; i >= 0; i--) {
 				if (nodePredicate($$this.$childNodes[i])) {
@@ -292,11 +324,13 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				} else if ($$this.$childNodes[i].$firstChildNode()) {
 					// if a fraggle has content, assign it the nextSibling but terminate early. we can do this because anything further to the left will have a different nextSibling.
 					$$this.$childNodes[i].nextSibling = node;
+					node.$$isNextSiblingOf.push($$this.$childNodes[i]);
 					stopped = true;
 					break;
 				} else {
 					// if a fraggle has no content, grab the node as nextSibling but allow the algorithm to continue. That way other fraggles to the left can also use this as the right abutting node.
 					$$this.$childNodes[i].nextSibling = node;
+					node.$$isNextSiblingOf.push($$this.$childNodes[i]);
 				}
 			}
 			if (!stopped && $$this.$logicalParent instanceof Fraggle) {
@@ -306,8 +340,16 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 						break;
 					}
 				}
-				doNextSiblingAssignment($$this.$logicalParent, i - 1, node);
+				$$doNextSiblingAssignment($$this.$logicalParent, i - 1, node);
 			}
+		};
+		const doNextSiblingAssignment = ($$this, marker, node) => {
+			if (node) {
+				if (!node.$$isNextSiblingOf) {
+					node.$$isNextSiblingOf = [];
+				}
+			}
+			$$doNextSiblingAssignment($$this, marker, node);
 		};
 		//
 		//
@@ -339,6 +381,8 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 		}
 		// algo
 		if (nodePredicate(newNode)) {
+			// important to set for removal.
+			newNode.$$fraggle = $this;
 			if (nodePredicate(referenceNode)) {
 				// CASE 2
 				// the parent is a fraggle, but the reference and the new node are both DOM nodes
@@ -385,7 +429,15 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				newNode.isConnected = true;
 				newNode.parentElement = $this.$reified;
 				newNode.nextSibling = referenceNode;
+				if (!referenceNode.$$isNextSiblingOf) {
+					referenceNode.$$isNextSiblingOf = [];
+				}
+				referenceNode.$$isNextSiblingOf.push(newNode);
 				newNode.previousSibling = oldPreviousSibling;
+				if (!oldPreviousSibling.$$isPreviousSiblingOf) {
+					oldPreviousSibling.$$isPreviousSiblingOf = [];
+				}
+				oldPreviousSibling.$$isPreviousSiblingOf.push(newNode);
 				//
 				const newNodeLeftBound =
 					newNode.$firstChildNode() || newNode.nextSibling;
@@ -409,9 +461,21 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				// the next sibling is the same as $this's next sibling
 				// because we are dealing with real DOM elements
 				newNode.nextSibling = $this.nextSibling;
+				if ($this.nextSibling) {
+					if (!$this.nextSibling.$$isNextSiblingOf) {
+						$this.nextSibling.$$isNextSiblingOf = [];
+					}
+					$this.nextSibling.$$isNextSiblingOf.push(newNode);
+				}
 				// the previous sibling must be whatever is at the end of $this
 				// we set this _before_ updating lastChild
 				newNode.previousSibling = $this.lastChild;
+				if ($this.lastChild) {
+					if (!$this.lastChild.$$isPreviousSiblingOf) {
+						$this.lastChild.$$isPreviousSiblingOf = [];
+					}
+					$this.lastChild.$$isPreviousSiblingOf.push(newNode);
+				}
 				//
 				const newNodeLeftBound =
 					newNode.$firstChildNode() || newNode.nextSibling;
@@ -435,7 +499,19 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 				newNode.isConnected = true;
 				newNode.parentElement = $this.$reified;
 				newNode.nextSibling = referenceAnchor;
+				if (referenceAnchor) {
+					if (!referenceAnchor.$$isNextSiblingOf) {
+						referenceAnchor.$$isNextSiblingOf = [];
+					}
+					referenceAnchor.$$isNextSiblingOf.push(newNode);
+				}
 				newNode.previousSibling = oldPreviousSibling;
+				if (oldPreviousSibling) {
+					if (!oldPreviousSibling.$$isPreviousSiblingOf) {
+						oldPreviousSibling.$$isPreviousSiblingOf = [];
+					}
+					oldPreviousSibling.$$isPreviousSiblingOf.push(newNode);
+				}
 				//
 				const newNodeLeftBound =
 					newNode.$firstChildNode() || newNode.nextSibling;
@@ -446,6 +522,9 @@ const insertBefore = (nodePredicate) => ($this, newNode, referenceNode) => {
 			}
 		}
 	}
+};
+const $remove = (nodePredicate) => ($this) => {
+	//
 };
 
 const cloneNode = (nodePredicate) => ($this) => {
@@ -496,9 +575,22 @@ const hasChildNodes = (nodePredicate) => ($this) => {
 const appendChild = (nodePredicate) => ($this, aChild) => {
 	insertBefore(nodePredicate)($this, aChild, null);
 };
-const normalize = () => {};
-const removeChild = () => {};
-const replaceChild = () => {};
+
+const removeChild = (nodePredicate) => ($this, aChild) => {
+	for (let i = 0; i < $this.$childNodes.length; i++) {
+		if ($this.$childNodes[i] === aChild) {
+			return $remove(nodePredicate)(aChild)[0];
+		}
+	}
+	throw new Error("Child not found");
+};
+const remove = (nodePredicate) => ($this) => {
+	$remove(nodePredicate)($this);
+};
+const replaceChild = (nodePredicate) => ($this, newChild, oldChild) => {
+	const [_, reference] = $removeChild(nodePredicate)($this, oldChild);
+	insertBefore(nodePredicate)($this, newChild, reference);
+};
 
 module.exports = {
 	appendChild,
@@ -507,8 +599,8 @@ module.exports = {
 	getRootNode,
 	hasChildNodes,
 	insertBefore,
-	normalize,
 	removeChild,
+	remove,
 	replaceChild,
 	Fraggle,
 	FRAGGLE_NODE_TYPE,
